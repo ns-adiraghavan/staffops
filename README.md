@@ -14,6 +14,15 @@ are intentionally left out; their manual equivalents ship here.
 > Google Drive JSON) can drop in without touching the UI. See
 > [Roadmap → backend](#swapping-in-the-real-backend).
 
+**The app opens on a blank slate.** Use **Load demo data** (sidebar or the
+welcome screen) to populate the 11 real NS vendors and sample requirements;
+**Clear data** returns to empty. Everything is per-browser until the backend
+lands. Résumé upload (Anonymise CV, Add candidate, Vendor view) extracts text
+from PDF/DOCX/TXT in the browser; file bytes aren't persisted yet, so the
+filename is captured and the candidate created. The **Documents** screen holds
+the résumé template, JD guide, and generates starter NDA / recruiting-agreement
+`.docx`. Client-facing outputs are branded **"NS Managed Delivery"**.
+
 ---
 
 ## Tech stack
@@ -143,19 +152,20 @@ future LLM pass (PRD Phase 3) would catch the edge cases rules miss.
 
 ---
 
-## Swapping in the real backend
+## Shared data (optional backend)
 
-Every screen reads through `useDB()` and writes through the mutation helpers in
-**`src/data/store.ts`** — no component imports `localStorage` directly. To wire
-the Phase-1 backend (Express API + Google Drive JSON per the PRD):
+The app runs per-browser by default. To share data across the team, turn on
+the backend — full steps and the **cost breakdown** (Drive is free; only
+hosting costs) are in **[`docs/BACKEND_SETUP.md`](docs/BACKEND_SETUP.md)**.
 
-1. Add the API routes to `server/index.js` (Drive service-account credentials
-   live on the EC2 host, never in the browser).
-2. In `store.ts`, change the mutation helpers to call those routes and refresh
-   `db` from the server response. Keep the same exported function names.
-
-The UI does not change. CV file uploads (currently a placeholder dropzone on the
-vendor page) attach to the same Drive folder structure the PRD defines.
+In short: set `VITE_API=1`, then run `npm run build && npm start`. The Express
+server (`server/index.js`) exposes `GET/PUT /api/state` backed by a storage
+adapter — **local file** (`server/data/state.json`, zero setup) by default, or
+**Google Drive** (`STORAGE=drive` + a service account, no incremental cost)
+per the PRD. The frontend hydrates from the server on load and pushes every
+change; no screen code changes (`src/data/store.ts` is the only integration
+point). Uploaded résumé files persist too (`/api/files`) — stored under
+`server/data/files/` in file mode or in the shared folder in Drive mode.
 
 ---
 
