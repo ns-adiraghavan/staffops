@@ -7,7 +7,8 @@ export type RouteName =
   | 'vendors'
   | 'upload'
   | 'ratecard'
-  | 'generate';
+  | 'generate'
+  | 'documents';
 
 export interface Route {
   name: RouteName;
