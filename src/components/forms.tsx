@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useApp } from '../app-context';
-import { Modal, Field } from './ui';
+import { Modal, Field, FilePick } from './ui';
 import { getDB, addRequirement, updateRequirement, addCandidate, updateCandidate, deleteCandidate, addVendor, updateVendor } from '../data/store';
 import { LEVELS, STATUSES, STAGES, STAGE_LABEL } from '../lib/constants';
-import type { Requirement, Candidate, Vendor, EngType, Priority, ReqStatus, Stage, Fit, VendorType } from '../types';
+import type { Requirement, Candidate, Vendor, EngType, Priority, ReqStatus, Stage, Fit, VendorType, AgreementStatus } from '../types';
+import { API_ON, uploadFile, fileUrl } from '../lib/api';
 
 /* ---------- Requirement ---------- */
 export function RequirementForm({ existing }: { existing?: Requirement }) {
@@ -110,11 +111,17 @@ export function CandidateForm({ reqId, existing }: { reqId: string; existing?: C
     interviewRef: existing?.interviewRef ?? '',
     comment: existing?.comment ?? '',
   });
+  const [file, setFile] = useState<File | null>(null);
   const set = (k: string, v: unknown) => setF((s) => ({ ...s, [k]: v }));
 
-  const save = () => {
+  const save = async () => {
     if (!f.name.trim()) return toast('Name is required');
-    const data = { ...f, name: f.name.trim(), exp: +f.exp, location: f.location.trim() || '—', ctc: f.ctc.trim() || '—', ectc: f.ectc.trim() || '—', notice: f.notice.trim() || '—' };
+    let resumeFileId = existing?.resumeFileId;
+    if (file && API_ON) {
+      const up = await uploadFile(file);
+      if (up) resumeFileId = up.id;
+    }
+    const data = { ...f, name: f.name.trim(), exp: +f.exp, location: f.location.trim() || '—', ctc: f.ctc.trim() || '—', ectc: f.ectc.trim() || '—', notice: f.notice.trim() || '—', resumeName: file?.name ?? existing?.resumeName, resumeFileId };
     if (existing) updateCandidate(existing.id, data);
     else addCandidate(reqId, data);
     closeModal();
@@ -137,7 +144,17 @@ export function CandidateForm({ reqId, existing }: { reqId: string; existing?: C
     >
       <div className="grid2" style={{ marginBottom: 14 }}>
         <Field label="Name *"><input value={f.name} onChange={(e) => set('name', e.target.value)} /></Field>
-        <Field label="Vendor"><select value={f.vendor} onChange={(e) => set('vendor', e.target.value)}>{db.vendors.map((v) => <option key={v.id}>{v.name}</option>)}</select></Field>
+        <Field label="Vendor"><input list="vendor-names" value={f.vendor} onChange={(e) => set('vendor', e.target.value)} placeholder="Vendor name" /><datalist id="vendor-names">{db.vendors.map((v) => <option key={v.id} value={v.name} />)}</datalist></Field>
+      </div>
+      <div className="field" style={{ marginBottom: 14 }}>
+        <label className="lbl">Résumé / CV</label>
+        <FilePick file={file} onPick={setFile} />
+        {!file && existing?.resumeName && (
+          <div className="hint" style={{ marginTop: 6 }}>
+            Current: {existing.resumeName}
+            {existing.resumeFileId && <> · <a href={fileUrl(existing.resumeFileId)} target="_blank" rel="noreferrer">download</a></>}
+          </div>
+        )}
       </div>
       <div className="grid3" style={{ marginBottom: 14 }}>
         <Field label="Experience (yrs)"><input type="number" value={f.exp} onChange={(e) => set('exp', e.target.value)} /></Field>
@@ -170,11 +187,17 @@ export function VendorForm({ existing }: { existing?: Vendor }) {
     tags: (existing?.tags ?? []).join(', '),
     notes: existing?.notes ?? '',
   });
+  const [pw, setPw] = useState<{ nda: boolean; agreement: AgreementStatus; note: string }>({
+    nda: existing?.paperwork?.nda ?? false,
+    agreement: existing?.paperwork?.agreement ?? 'none',
+    note: existing?.paperwork?.note ?? '',
+  });
   const set = (k: string, v: unknown) => setF((s) => ({ ...s, [k]: v }));
+  const setP = (k: 'nda' | 'agreement' | 'note', v: unknown) => setPw((s) => ({ ...s, [k]: v }));
 
   const save = () => {
     if (!f.name.trim()) return toast('Vendor name is required');
-    const data = { name: f.name.trim(), type: f.type, contact: f.contact.trim(), email: f.email.trim(), fit: f.fit, tags: f.tags.split(',').map((s) => s.trim()).filter(Boolean), notes: f.notes.trim() };
+    const data = { name: f.name.trim(), type: f.type, contact: f.contact.trim(), email: f.email.trim(), fit: f.fit, tags: f.tags.split(',').map((s) => s.trim()).filter(Boolean), notes: f.notes.trim(), paperwork: pw };
     if (existing) updateVendor(existing.id, data);
     else addVendor(data);
     closeModal();
@@ -205,6 +228,20 @@ export function VendorForm({ existing }: { existing?: Vendor }) {
         <Field label="Tags (comma-separated)"><input value={f.tags} onChange={(e) => set('tags', e.target.value)} /></Field>
       </div>
       <Field label="Engagement notes"><textarea rows={3} value={f.notes} onChange={(e) => set('notes', e.target.value)} /></Field>
+      <div style={{ marginTop: 14 }}>
+        <label className="lbl">Paperwork status</label>
+        <label className="chk"><input type="checkbox" checked={pw.nda} onChange={() => setP('nda', !pw.nda)} /> Vendor NDA signed</label>
+        <div className="grid2" style={{ marginTop: 8 }}>
+          <Field label={f.type === 'FTE' ? 'Recruitment agreement' : 'MSA / vendor agreement'}>
+            <select value={pw.agreement} onChange={(e) => setP('agreement', e.target.value as AgreementStatus)}>
+              <option value="signed">Signed</option>
+              <option value="pending">Pending</option>
+              <option value="none">None on record</option>
+            </select>
+          </Field>
+          <Field label="Status note"><input value={pw.note} onChange={(e) => setP('note', e.target.value)} placeholder="e.g. Executed Aug 7, 2026" /></Field>
+        </div>
+      </div>
     </Modal>
   );
 }
