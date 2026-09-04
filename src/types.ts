@@ -56,7 +56,19 @@ export interface Candidate {
   fit: Fit;
   interviewRef: string;
   comment: string;
+  resumeName?: string; // attached résumé filename
+  resumeFileId?: string; // storage id when uploaded to the backend (Drive/file)
   createdAt: number;
+}
+
+// Paperwork status per vendor. The NDA applies to everyone; the "agreement"
+// is the MSA / Vendor Agreement (C2H agreement for contract vendors,
+// Recruitment agreement for FTE vendors — which template is chosen by type).
+export type AgreementStatus = 'signed' | 'pending' | 'none';
+export interface Paperwork {
+  nda: boolean;
+  agreement: AgreementStatus;
+  note: string; // free-text detail, e.g. "Executed Aug 7, 2026"
 }
 
 export interface Vendor {
@@ -68,6 +80,7 @@ export interface Vendor {
   email: string;
   tags: string[];
   notes: string;
+  paperwork?: Paperwork;
 }
 
 export interface Activity {
