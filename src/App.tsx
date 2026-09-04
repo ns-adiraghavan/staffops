@@ -7,6 +7,7 @@ import { Vendors } from './screens/Vendors';
 import { VendorUpload } from './screens/VendorUpload';
 import { RateCard } from './screens/RateCard';
 import { Generate } from './screens/Generate';
+import { Documents } from './screens/Documents';
 
 function Screen() {
   const { route } = useApp();
@@ -17,6 +18,7 @@ function Screen() {
     case 'upload': return <VendorUpload />;
     case 'ratecard': return <RateCard />;
     case 'generate': return <Generate />;
+    case 'documents': return <Documents />;
     default: return <Dashboard />;
   }
 }
