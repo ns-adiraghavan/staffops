@@ -15,8 +15,23 @@ import { seed } from './seed';
 
 const KEY = 'ns_staffops_beta_v1';
 
+// When VITE_API=1 the store also syncs through the Express/Drive backend:
+// it hydrates from GET /api/state on boot and pushes every change to
+// PUT /api/state (debounced). localStorage stays as an offline cache.
+// Off by default, so a static (Vercel) deploy keeps working per-browser.
+const API_ON = import.meta.env.VITE_API === '1' || import.meta.env.VITE_API === 'true';
+
 let db: DB = load();
 const listeners = new Set<() => void>();
+
+let pushTimer: number | undefined;
+function pushRemote() {
+  if (!API_ON) return;
+  clearTimeout(pushTimer);
+  pushTimer = window.setTimeout(() => {
+    fetch('/api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(db) }).catch(() => {});
+  }, 400);
+}
 
 function load(): DB {
   try {
@@ -25,9 +40,8 @@ function load(): DB {
   } catch {
     /* ignore */
   }
-  const fresh = seed();
-  persist(fresh);
-  return fresh;
+  // Start on a blank slate — the user loads demo data explicitly.
+  return { requirements: [], vendors: [], candidates: [], activity: [] };
 }
 
 function persist(next: DB) {
@@ -45,6 +59,21 @@ function commit(mutate: (draft: DB) => void) {
   db = next;
   persist(next);
   listeners.forEach((l) => l());
+  pushRemote();
+}
+
+// Hydrate from the backend on boot when API mode is on.
+if (API_ON) {
+  fetch('/api/state')
+    .then((r) => (r.ok ? r.json() : null))
+    .then((remote: DB | null) => {
+      if (remote && Array.isArray(remote.requirements)) {
+        db = remote;
+        persist(db);
+        listeners.forEach((l) => l());
+      }
+    })
+    .catch(() => {});
 }
 
 /* ---- read ---- */
@@ -141,13 +170,23 @@ export function updateVendor(id: string, patch: Partial<Vendor>) {
   });
 }
 
-/* ---- reset ---- */
-export function resetDemo() {
+/* ---- demo mode / blank slate ---- */
+export const isEmpty = () => db.requirements.length === 0 && db.vendors.length === 0 && db.candidates.length === 0;
+
+export function loadDemo() {
   commit((d) => {
     const s = seed();
     d.requirements = s.requirements;
     d.vendors = s.vendors;
     d.candidates = s.candidates;
     d.activity = s.activity;
+  });
+}
+export function clearAll() {
+  commit((d) => {
+    d.requirements = [];
+    d.vendors = [];
+    d.candidates = [];
+    d.activity = [];
   });
 }
