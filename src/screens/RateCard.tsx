@@ -67,7 +67,7 @@ export function RateCard() {
     const hS = 'background:#1B3A6B;color:#fff;padding:7px 10px;text-align:left;border:1px solid #142d54;font-size:11px;font-weight:600;text-transform:uppercase';
     const hR = hS.replace('text-align:left', 'text-align:right');
     let html = `<table style="border-collapse:collapse;font-family:Calibri,Arial,sans-serif;font-size:12px"><thead>
-<tr><td colspan="${cols}" style="background:#1B3A6B;color:#fff;padding:10px 14px;font-size:14px;font-weight:bold">NS Staff Augmentation — Rate Card: ${meta.client || 'Client'}</td></tr>
+<tr><td colspan="${cols}" style="background:#1B3A6B;color:#fff;padding:10px 14px;font-size:14px;font-weight:bold">NS Managed Delivery — Rate Card: ${meta.client || 'Client'}</td></tr>
 <tr><td colspan="${cols}" style="background:#234a86;color:#a8c0e0;padding:4px 14px;font-size:11px">Prepared by ${meta.prepBy} · ${fmtDate(meta.date)} · ${meta.eng} · All prices in ${cur}</td></tr>
 <tr><th style="${hS}">Skill Group</th><th style="${hS}">Exp Band</th><th style="${hS}">Level</th><th style="${hR}">${sym}/hr</th><th style="${hR}">${sym}/month</th><th style="${hR}">${sym}/year</th>${internal ? `<th style="${hR}">Cost ${sym}/hr</th><th style="${hR}">Margin</th>` : ''}</tr></thead><tbody>`;
     let tsv = `Skill Group\tExp Band\tLevel\t${sym}/hr\t${sym}/month\t${sym}/year${internal ? `\tCost ${sym}/hr\tMargin` : ''}`;
@@ -119,7 +119,7 @@ export function RateCard() {
 
         <div className="card" style={{ overflow: 'hidden', marginBottom: 16 }}>
           <div style={{ background: 'var(--navy-d)', padding: '12px 18px', cursor: 'pointer' }} onClick={copy} title="Click to copy">
-            <div style={{ fontSize: 13.5, fontWeight: 700, color: '#fff' }}>NS Staff Augmentation — Rate Card: <span style={{ opacity: 0.8 }}>{meta.client || 'Client'}</span></div>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: '#fff' }}>NS Managed Delivery — Rate Card: <span style={{ opacity: 0.8 }}>{meta.client || 'Client'}</span></div>
             <div style={{ fontSize: 11, color: '#9db8e6', marginTop: 2 }}>Prepared by {meta.prepBy} · {fmtDate(meta.date)} · {meta.eng} · All prices in {cur}</div>
           </div>
           <div style={{ overflowX: 'auto' }}>
@@ -185,41 +185,116 @@ export function RateCard() {
           </div>
         </div>
 
-        <div className="card card-bd">
-          <div onClick={() => setRefOpen((v) => !v)} style={{ cursor: 'pointer', fontWeight: 700, color: 'var(--navy)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ display: 'inline-block', transition: 'transform .2s', transform: refOpen ? 'rotate(90deg)' : 'none', fontSize: 10, color: 'var(--muted)' }}>▶</span>
-            Reference rate schedule — all skill groups <span className="hint" style={{ fontWeight: 400 }}>Pre-populated NS rates</span>
-          </div>
-          <div className={'rc-ref' + (refOpen ? ' open' : '')}>
-            <div style={{ marginTop: 12, overflowX: 'auto' }}>
-              <RefTable sym={sym} toDisp={toDisp} cur={cur} />
-            </div>
-          </div>
-        </div>
+        <FullPreview cur={cur} sym={sym} toDisp={toDisp} fmtCost={fmtCost} open={refOpen} setOpen={setRefOpen} meta={meta} />
       </div>
     </>
   );
 }
 
-function RefTable({ sym, toDisp, cur }: { sym: string; toDisp: (u: number) => number; cur: 'USD' | 'INR' }) {
-  const labels = ['0–2', '2–4', '5–7', '8–10', '10–12', '12+'];
+// Full rate card — every skill group × band at once. Toggle between the NS
+// benchmark prices (margin derived from cost) and a target margin you set
+// (price back-solved from cost at that margin, across the whole card). Every
+// number is editable; the margin recomputes live from the edited price.
+type Override = { hr?: number; mo?: number; yr?: number };
+function FullPreview({ cur, sym, toDisp, fmtCost, open, setOpen, meta }: {
+  cur: 'USD' | 'INR'; sym: string; toDisp: (u: number) => number; fmtCost: (u: number) => string;
+  open: boolean; setOpen: (v: boolean) => void; meta: { client: string; prepBy: string; eng: string };
+}) {
+  const { toast } = useApp();
+  const [mode, setMode] = useState<'benchmark' | 'target'>('benchmark');
+  const [target, setTarget] = useState(60);
+  const [ov, setOv] = useState<Record<string, Override>>({});
+
+  const key = (g: string, b: string) => g + '|' + b;
+  const editCell = (k: string, field: keyof Override, dispVal: number) => {
+    const usd = cur === 'INR' ? dispVal / INR_RATE : dispVal;
+    setOv((s) => ({ ...s, [k]: { ...s[k], [field]: usd } }));
+  };
+
+  interface FR { key: string; group: string; band: string; level: string; hr: number; mo: number; yr: number; cost: number; margin: number; edited: boolean }
+  const rows: FR[] = [];
+  GROUPS.forEach((g) => BANDS.forEach((b) => {
+    const d = RATE_DATA[g]?.[b];
+    if (!d) return;
+    const cost = COST_DATA[g]?.[b] || 0;
+    const k = key(g, b);
+    const o = ov[k] || {};
+    let baseHr: number, baseMo: number, baseYr: number;
+    if (mode === 'target') { baseHr = cost / (1 - target / 100); baseMo = baseHr * 160; baseYr = baseHr * 160 * 12; }
+    else { baseHr = d.hr; baseMo = d.mo; baseYr = d.yr; }
+    const hr = o.hr ?? baseHr, mo = o.mo ?? baseMo, yr = o.yr ?? baseYr;
+    const margin = hr > 0 ? Math.round(((hr - cost) / hr) * 100) : 0;
+    rows.push({ key: k, group: g, band: b, level: d.label, hr, mo, yr, cost, margin, edited: o.hr != null || o.mo != null || o.yr != null });
+  }));
+
+  const editedCount = Object.keys(ov).length;
+  const avgMargin = Math.round(rows.reduce((s, r) => s + r.margin, 0) / rows.length);
+
+  const copyAll = async () => {
+    const hS = 'background:#1B3A6B;color:#fff;padding:6px 10px;text-align:left;border:1px solid #142d54;font-size:11px;font-weight:600;text-transform:uppercase';
+    const hR = hS.replace('text-align:left', 'text-align:right');
+    let html = `<table style="border-collapse:collapse;font-family:Calibri,Arial,sans-serif;font-size:12px"><thead>
+<tr><td colspan="8" style="background:#1B3A6B;color:#fff;padding:9px 12px;font-size:13px;font-weight:bold">NS Managed Delivery — Full Rate Card${meta.client ? ' · ' + meta.client : ''} · ${mode === 'target' ? 'target margin ' + target + '%' : 'benchmark prices'} · ${cur}</td></tr>
+<tr><th style="${hS}">Skill Group</th><th style="${hS}">Band</th><th style="${hS}">Level</th><th style="${hR}">${sym}/hr</th><th style="${hR}">${sym}/month</th><th style="${hR}">${sym}/year</th><th style="${hR}">Cost ${sym}/hr</th><th style="${hR}">Margin</th></tr></thead><tbody>`;
+    let tsv = `Skill Group\tBand\tLevel\t${sym}/hr\t${sym}/month\t${sym}/year\tCost ${sym}/hr\tMargin`;
+    rows.forEach((r, i) => {
+      const bg = i % 2 ? '#f4f6fb' : '#fff';
+      const td = `padding:6px 10px;border:1px solid #e3e7ef;background:${bg}`; const tdr = td + ';text-align:right';
+      const hr = Math.round(toDisp(r.hr)), mo = Math.round(toDisp(r.mo)), yr = Math.round(toDisp(r.yr));
+      html += `<tr><td style="${td};font-weight:600;color:#1B3A6B">${r.group}</td><td style="${td}">${r.band} yrs</td><td style="${td}">${r.level}</td><td style="${tdr}">${sym}${hr.toLocaleString('en-IN')}</td><td style="${tdr}">${sym}${mo.toLocaleString('en-IN')}</td><td style="${tdr}">${sym}${yr.toLocaleString('en-IN')}</td><td style="${tdr}">${fmtCost(r.cost)}</td><td style="${tdr};font-weight:700">${r.margin}%</td></tr>`;
+      tsv += `\n${r.group}\t${r.band} yrs\t${r.level}\t${sym}${hr}\t${sym}${mo}\t${sym}${yr}\t${fmtCost(r.cost)}\t${r.margin}%`;
+    });
+    html += '</tbody></table>';
+    toast((await copyRichTable(html, tsv)) ? 'Full rate card copied' : 'Copy failed');
+  };
+
   return (
-    <table style={{ fontSize: 12 }}>
-      <thead className="navy"><tr><th>Skill Group</th>{labels.map((b) => <th className="num" key={b}>{b} yrs</th>)}</tr></thead>
-      <tbody>
-        {GROUPS.map((g, i) => (
-          <tr key={g} className={i % 2 ? 'tr-alt' : ''}>
-            <td style={{ fontWeight: 600, color: 'var(--navy)' }}>{g}</td>
-            {BANDS.map((b) => {
-              const r = RATE_DATA[g]?.[b];
-              if (!r) return <td className="num" key={b} style={{ color: '#d1d5db' }}>—</td>;
-              const hr = Math.round(toDisp(r.hr));
-              const mo = cur === 'INR' ? Math.round((r.mo * 90) / 1000) + 'k' : (r.mo / 1000).toFixed(1) + 'k';
-              return <td className="num" key={b}><div style={{ fontWeight: 600 }}>{sym}{hr}/hr</div><div className="hint">{sym}{mo}/mo</div></td>;
-            })}
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="card card-bd">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div onClick={() => setOpen(!open)} style={{ cursor: 'pointer', fontWeight: 700, color: 'var(--navy)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ display: 'inline-block', transition: 'transform .2s', transform: open ? 'rotate(90deg)' : 'none', fontSize: 10, color: 'var(--muted)' }}>▶</span>
+          Full rate card — all {rows.length} roles
+        </div>
+        {open && (
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <button className={'pillbtn' + (mode === 'benchmark' ? ' on' : '')} onClick={() => setMode('benchmark')}>Benchmark prices</button>
+            <button className={'pillbtn' + (mode === 'target' ? ' on' : '')} onClick={() => setMode('target')}>Target margin</button>
+            {editedCount > 0 && <button className="btn btn-ghost btn-sm" onClick={() => setOv({})}>Reset {editedCount} edit{editedCount > 1 ? 's' : ''}</button>}
+            <button className="btn btn-navy btn-sm" onClick={copyAll}>Copy full card</button>
+          </div>
+        )}
+      </div>
+
+      <div className={'rc-ref' + (open ? ' open' : '')}>
+        {mode === 'target' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 14, background: 'var(--soft)', borderRadius: 8, padding: '12px 16px', flexWrap: 'wrap' }}>
+            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--navy)', minWidth: 130 }}>Target margin: <span style={{ color: 'var(--teal-d)' }}>{target}%</span></div>
+            <input type="range" min={40} max={80} value={target} onChange={(e) => setTarget(+e.target.value)} style={{ flex: 1, minWidth: 200 }} />
+            <div className="hint">Every price back-solved as Cost ÷ (1 − {target}%). Avg margin {avgMargin}%.</div>
+          </div>
+        )}
+        <div style={{ marginTop: 12, overflowX: 'auto', maxHeight: 460, overflowY: 'auto' }}>
+          <table style={{ fontSize: 12 }}>
+            <thead className="navy" style={{ position: 'sticky', top: 0 }}>
+              <tr><th>Skill Group</th><th>Band</th><th>Level</th><th className="num">{sym}/hr</th><th className="num">{sym}/month</th><th className="num">{sym}/year</th><th className="num">Cost {sym}/hr</th><th className="num" style={{ textAlign: 'center' }}>Margin</th></tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={r.key} className={i % 2 ? 'tr-alt' : ''} style={r.edited ? { background: '#fffdf5' } : undefined}>
+                  <td style={{ fontWeight: 600, color: 'var(--navy)' }}>{r.group}</td>
+                  <td style={{ color: 'var(--muted)' }}>{r.band} yrs</td>
+                  <td>{r.level}</td>
+                  <td className="num"><input className="rc-input" type="number" value={Math.round(toDisp(r.hr))} onChange={(e) => editCell(r.key, 'hr', +e.target.value)} /></td>
+                  <td className="num"><input className="rc-input" type="number" value={Math.round(toDisp(r.mo))} onChange={(e) => editCell(r.key, 'mo', +e.target.value)} /></td>
+                  <td className="num"><input className="rc-input" type="number" value={Math.round(toDisp(r.yr))} onChange={(e) => editCell(r.key, 'yr', +e.target.value)} /></td>
+                  <td className="num" style={{ color: 'var(--muted)' }}>{fmtCost(r.cost)}</td>
+                  <td style={{ textAlign: 'center' }}><span className={'mg ' + marginClass(r.margin)}>{r.margin}%</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   );
 }
