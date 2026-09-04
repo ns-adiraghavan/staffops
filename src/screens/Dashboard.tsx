@@ -1,12 +1,29 @@
 import { useApp } from '../app-context';
-import { useDB, candsFor, reqById } from '../data/store';
-import { Topbar } from '../components/ui';
+import { useDB, candsFor, reqById, loadDemo } from '../data/store';
+import { Topbar, EmptyState } from '../components/ui';
 import { RequirementForm } from '../components/forms';
 import { ACTIVE_STATUSES, STATUS_CLASS, ago } from '../lib/constants';
 
 export function Dashboard() {
   const { navigate, openModal } = useApp();
   const db = useDB();
+  const blank = db.requirements.length === 0 && db.vendors.length === 0 && db.candidates.length === 0;
+
+  if (blank) {
+    return (
+      <>
+        <Topbar title="Dashboard" sub="Netscribes Tech Staffing · Internal" />
+        <div className="content">
+          <EmptyState
+            title="Welcome to NS StaffOps"
+            sub="You're starting on a blank slate. Load the demo dataset to explore with real NS vendors and sample requirements, or start adding your own."
+            primary={<button className="btn btn-primary" onClick={loadDemo}>▷ Load demo data</button>}
+            secondary={<button className="btn btn-ghost" onClick={() => openModal(<RequirementForm />)}>+ New requirement</button>}
+          />
+        </div>
+      </>
+    );
+  }
 
   const active = db.requirements.filter((r) => ACTIVE_STATUSES.includes(r.status));
   const pendingRC = active.filter((r) => r.rateCard === 'Pending').length;
