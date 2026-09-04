@@ -4,6 +4,7 @@ import { useDB, reqById, candsFor, vendorById, setStage, setReqNote, updateRequi
 import { Topbar } from '../components/ui';
 import { RequirementForm, CandidateForm } from '../components/forms';
 import { STAGES, STAGE_LABEL, STATUS_CLASS, FIT_LABEL, initials, stageLabel } from '../lib/constants';
+import { fileUrl } from '../lib/api';
 import type { Stage } from '../types';
 
 export function RequirementDetail() {
@@ -48,7 +49,7 @@ export function RequirementDetail() {
                   <div className="cand-av">{initials(c.name)}</div>
                   <div style={{ minWidth: 0 }}>
                     <div className="cand-nm">{c.name}</div>
-                    <div className="cand-mt">{c.exp} yrs · {c.location} · {c.ctc}→{c.ectc} · {c.notice} · via {c.vendor}</div>
+                    <div className="cand-mt">{c.exp} yrs · {c.location} · {c.ctc}→{c.ectc} · {c.notice} · via {c.vendor}{c.resumeName ? (c.resumeFileId ? <> · <a href={fileUrl(c.resumeFileId)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>CV</a></> : ' · CV attached') : ''}</div>
                   </div>
                   <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14 }}>
                     <span className={'fit fit-' + (c.fit || 'none')}>{FIT_LABEL[c.fit || '']}</span>
