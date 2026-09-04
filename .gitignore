@@ -6,3 +6,5 @@ dist
 npm-debug.log*
 
 *.tsbuildinfo
+server/data
+service-account*.json
