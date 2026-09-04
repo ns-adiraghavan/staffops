@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useApp } from '../app-context';
 import { useDB, candsFor } from '../data/store';
-import { Topbar } from '../components/ui';
+import { Topbar, FilePick } from '../components/ui';
 import { generateJD, type JDInput } from '../lib/jd';
 import { redact, generateAnonDocx, type RedactKey } from '../lib/anonymise';
+import { extractText } from '../lib/extract';
 import { saveBlob, copyRichTable } from '../lib/download';
 import { STAGES, STAGE_LABEL } from '../lib/constants';
 
@@ -97,11 +98,29 @@ function AnonTool() {
   const [name, setName] = useState('');
   const [companies, setCompanies] = useState('');
   const [text, setText] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
   const [strip, setStrip] = useState<Record<RedactKey, boolean>>({ name: true, email: true, phone: true, company: true, links: true, address: true });
   const [result, setResult] = useState<{ text: string; count: number } | null>(null);
 
+  const pick = async (f: File | null) => {
+    setFile(f);
+    setResult(null);
+    if (!f) return;
+    setBusy(true);
+    try {
+      const t = await extractText(f);
+      setText(t);
+      toast(t ? 'Text extracted — review, then run' : 'No text found — this may be a scanned/image PDF; paste manually');
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Could not read that file');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const run = () => {
-    if (!text.trim()) return toast('Paste some CV text first');
+    if (!text.trim()) return toast('Upload a résumé or paste CV text first');
     const r = redact(text, { name, companies: csv(companies), strip });
     setResult(r);
     toast(`${r.count} item${r.count === 1 ? '' : 's'} redacted`);
@@ -115,10 +134,11 @@ function AnonTool() {
 
   return (
     <div className="card card-bd" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <CardHead code="CV" title="Anonymise CV" sub="Rules-based · you choose what to strip" />
+      <CardHead code="CV" title="Anonymise CV" sub="Upload a résumé · rules-based · you choose what to strip" />
+      <div className="field" style={{ margin: 0 }}><div className="lbl">Upload résumé (PDF, DOCX or TXT)</div><FilePick file={file} onPick={pick} /></div>
       <div className="field" style={{ margin: 0 }}><div className="lbl">Candidate name (helps redaction)</div><input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Rahul Sharma" /></div>
       <div className="field" style={{ margin: 0 }}><div className="lbl">Company names to strip (comma-separated, optional)</div><input value={companies} onChange={(e) => setCompanies(e.target.value)} placeholder="Infosys, TCS, Barclays" /></div>
-      <div className="field" style={{ margin: 0 }}><div className="lbl">Paste CV text</div><textarea rows={4} value={text} onChange={(e) => setText(e.target.value)} placeholder="Paste the resume text here…" /></div>
+      <div className="field" style={{ margin: 0 }}><div className="lbl">{busy ? 'Extracting text…' : 'Extracted text — or paste manually'}</div><textarea rows={4} value={text} onChange={(e) => setText(e.target.value)} placeholder="Upload a résumé above, or paste the text here…" /></div>
       <div>
         <div className="lbl">Redact these details</div>
         {REDACT_OPTS.map(([k, label]) => (
@@ -168,7 +188,7 @@ function PackageTool({ intent, clearIntent }: { intent: { key: string; value: st
       const bg = i % 2 ? '#f4f6fb' : '#fff';
       rows += `<tr style="background:${bg}"><td style="padding:8px 12px;border:1px solid #e3e7ef;font-weight:600;color:#1B3A6B">Candidate ${String.fromCharCode(65 + i)}</td><td style="padding:8px 12px;border:1px solid #e3e7ef">${c.exp} yrs</td><td style="padding:8px 12px;border:1px solid #e3e7ef">${c.location}</td><td style="padding:8px 12px;border:1px solid #e3e7ef">${c.notice}</td><td style="padding:8px 12px;border:1px solid #e3e7ef">${c.ectc}</td></tr>`;
     });
-    const table = `<table style="border-collapse:collapse;width:100%;font-family:Calibri,Arial,sans-serif;font-size:13px"><thead><tr><td colspan="5" style="background:#1B3A6B;color:#fff;padding:10px 12px;font-weight:bold">NS Staff Augmentation — ${r.role} · shortlist</td></tr><tr>${['Profile', 'Experience', 'Location', 'Notice', 'Expected'].map((h) => `<th style="background:#234a86;color:#fff;padding:7px 12px;border:1px solid #142d54;text-align:left;font-size:11px;text-transform:uppercase">${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+    const table = `<table style="border-collapse:collapse;width:100%;font-family:Calibri,Arial,sans-serif;font-size:13px"><thead><tr><td colspan="5" style="background:#1B3A6B;color:#fff;padding:10px 12px;font-weight:bold">NS Managed Delivery — ${r.role} · shortlist</td></tr><tr>${['Profile', 'Experience', 'Location', 'Notice', 'Expected'].map((h) => `<th style="background:#234a86;color:#fff;padding:7px 12px;border:1px solid #142d54;text-align:left;font-size:11px;text-transform:uppercase">${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
     setBuilt(table);
     toast(`Package built — ${chosen.length} candidate${chosen.length > 1 ? 's' : ''}, names hidden`);
   };
