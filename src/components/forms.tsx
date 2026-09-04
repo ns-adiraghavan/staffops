@@ -5,6 +5,7 @@ import { getDB, addRequirement, updateRequirement, addCandidate, updateCandidate
 import { LEVELS, STATUSES, STAGES, STAGE_LABEL } from '../lib/constants';
 import type { Requirement, Candidate, Vendor, EngType, Priority, ReqStatus, Stage, Fit, VendorType, AgreementStatus } from '../types';
 import { API_ON, uploadFile, fileUrl } from '../lib/api';
+import { BENCHMARKS } from '../lib/benchmarks';
 
 /* ---------- Requirement ---------- */
 export function RequirementForm({ existing }: { existing?: Requirement }) {
@@ -26,6 +27,7 @@ export function RequirementForm({ existing }: { existing?: Requirement }) {
     start: existing?.start ?? '',
     vendors: existing?.vendors ?? [],
     jd: existing?.jd ?? '',
+    benchmarkId: existing?.benchmarkId ?? '',
   });
   const set = (k: string, v: unknown) => setF((s) => ({ ...s, [k]: v }));
   const toggleV = (id: string) => set('vendors', f.vendors.includes(id) ? f.vendors.filter((x) => x !== id) : [...f.vendors, id]);
@@ -88,6 +90,19 @@ export function RequirementForm({ existing }: { existing?: Requirement }) {
             </label>
           ))}
         </div>
+      </div>
+      <div className="field" style={{ marginBottom: 14 }}>
+        <label className="lbl">Cost benchmark designation <span className="hint">— closest market match (for cost validation)</span></label>
+        <select value={f.benchmarkId} onChange={(e) => set('benchmarkId', e.target.value)}>
+          <option value="">Custom / no match</option>
+          {Object.entries(
+            BENCHMARKS.reduce<Record<string, typeof BENCHMARKS>>((acc, b) => { (acc[b.group] = acc[b.group] || []).push(b); return acc; }, {})
+          ).map(([g, list]) => (
+            <optgroup label={g} key={g}>
+              {list.map((b) => <option key={b.id} value={b.id}>{b.designation} · {b.level} · {b.exp}y</option>)}
+            </optgroup>
+          ))}
+        </select>
       </div>
       <Field label="Job description"><textarea rows={3} value={f.jd} onChange={(e) => set('jd', e.target.value)} /></Field>
     </Modal>
