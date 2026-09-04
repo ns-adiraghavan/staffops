@@ -1,30 +1,54 @@
 import { useState } from 'react';
 import { useApp } from '../app-context';
-import { useDB, reqById, vendorById, addCandidate } from '../data/store';
-import { Topbar } from '../components/ui';
+import { useDB, reqById, vendorById, addCandidate, loadDemo } from '../data/store';
+import { Topbar, EmptyState, FilePick } from '../components/ui';
+import { API_ON, uploadFile } from '../lib/api';
 
-// Preview of the token-based vendor upload page. Submitting adds a real
-// candidate to the selected requirement (marked as vendor-submitted).
+// Preview of the token-based vendor upload page — this is exactly what a
+// vendor sees at their unique link. Submitting adds a real candidate to the
+// selected requirement (marked as vendor-submitted).
 export function VendorUpload() {
-  const { toast } = useApp();
+  const { toast, openModal } = useApp();
   const db = useDB();
   const [reqId, setReqId] = useState(db.requirements[0]?.id ?? '');
   const [vendorId, setVendorId] = useState(db.vendors[0]?.id ?? '');
   const [form, setForm] = useState({ name: '', exp: '', loc: '', ctc: '', ectc: '', notice: '' });
+  const [file, setFile] = useState<File | null>(null);
   const set = (k: string, v: string) => setForm((s) => ({ ...s, [k]: v }));
+
+  if (db.requirements.length === 0 || db.vendors.length === 0) {
+    return (
+      <>
+        <Topbar title="Vendor Upload Page" sub="What a vendor sees at their unique link" />
+        <div className="content">
+          <EmptyState
+            title="Add a requirement and a vendor first"
+            sub="The vendor view is generated per requirement × vendor pair, so you need at least one of each. Load the demo dataset to preview it instantly."
+            primary={<button className="btn btn-primary" onClick={loadDemo}>▷ Load demo data</button>}
+          />
+        </div>
+      </>
+    );
+  }
 
   const r = reqById(reqId) || db.requirements[0];
   const v = vendorById(vendorId) || db.vendors[0];
 
-  const submit = () => {
+  const submit = async () => {
     if (!form.name.trim()) return toast('Enter a candidate name');
+    let resumeFileId: string | undefined;
+    if (file && API_ON) {
+      const up = await uploadFile(file);
+      if (up) resumeFileId = up.id;
+    }
     addCandidate(
       r.id,
-      { name: form.name.trim(), vendor: v.name, exp: +form.exp || 0, location: form.loc.trim() || '—', ctc: form.ctc.trim() || '—', ectc: form.ectc.trim() || '—', notice: form.notice.trim() || '—', stage: 'Received', fit: '', interviewRef: '', comment: '' },
+      { name: form.name.trim(), vendor: v.name, exp: +form.exp || 0, location: form.loc.trim() || '—', ctc: form.ctc.trim() || '—', ectc: form.ectc.trim() || '—', notice: form.notice.trim() || '—', stage: 'Received', fit: '', interviewRef: '', comment: '', resumeName: file?.name, resumeFileId },
       { fromVendor: true }
     );
     toast(`${form.name.trim()} submitted to ${r.id}`);
     setForm({ name: '', exp: '', loc: '', ctc: '', ectc: '', notice: '' });
+    setFile(null);
   };
 
   return (
@@ -51,7 +75,7 @@ export function VendorUpload() {
             <div className="card-bd">
               <div className="warn" style={{ marginBottom: 16 }}>Submit one candidate at a time. Use the same link to submit more. You can only see your own submissions.</div>
               <div className="field"><label className="lbl">Candidate full name</label><input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Rahul Sharma" /></div>
-              <div className="field"><label className="lbl">Resume / CV</label><div className="dropzone">Click to upload PDF or DOCX<br /><span style={{ fontSize: 11 }}>or drag and drop</span></div></div>
+              <div className="field"><label className="lbl">Résumé / CV</label><FilePick file={file} onPick={setFile} /></div>
               <div className="grid2">
                 <div className="field"><label className="lbl">Years of experience</label><input type="number" value={form.exp} onChange={(e) => set('exp', e.target.value)} placeholder="e.g. 6" /></div>
                 <div className="field"><label className="lbl">Location</label><input value={form.loc} onChange={(e) => set('loc', e.target.value)} placeholder="e.g. Bengaluru" /></div>
@@ -68,6 +92,9 @@ export function VendorUpload() {
               <p className="hint" style={{ textAlign: 'center', marginTop: 12 }}>Powered by NS StaffOps · staffing@netscribes.com</p>
             </div>
           </div>
+        </div>
+        <div className="hint" style={{ marginTop: 14, maxWidth: 640 }}>
+          Note: résumé files aren’t stored yet in this beta — the filename is captured and the candidate is created. File bytes attach to the requirement’s Drive folder once the storage backend lands.
         </div>
       </div>
     </>
