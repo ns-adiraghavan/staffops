@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../app-context';
 import { Topbar } from '../components/ui';
 import { RATE_DATA, COST_DATA, BANDS, INR_RATE, marginClass } from '../lib/rates';
+import { BENCHMARKS, avgMo, groupsWithBenchmarks } from '../lib/benchmarks';
 import { copyRichTable } from '../lib/download';
 import { fmtDate } from '../lib/constants';
 
@@ -186,8 +187,97 @@ export function RateCard() {
         </div>
 
         <FullPreview cur={cur} sym={sym} toDisp={toDisp} fmtCost={fmtCost} open={refOpen} setOpen={setRefOpen} meta={meta} />
+        <CostBenchmark cur={cur} sym={sym} />
       </div>
     </>
+  );
+}
+
+// Cost Benchmarking — market-validated CTC by designation, mapped to the rate
+// card. Shows the average expected cost and how NS's internal cost compares.
+function CostBenchmark({ cur, sym }: { cur: 'USD' | 'INR'; sym: string }) {
+  const { toast } = useApp();
+  const [open, setOpen] = useState(false);
+  const [group, setGroup] = useState('');
+  const [q, setQ] = useState('');
+  const groups = groupsWithBenchmarks();
+
+  // Market values are ₹/mo; show in the active currency.
+  const money = (rsMo: number | null) => {
+    if (rsMo == null) return '—';
+    const v = cur === 'INR' ? rsMo : Math.round(rsMo / INR_RATE);
+    return sym + v.toLocaleString('en-IN');
+  };
+  // NS internal cost ($/hr) → monthly in the active currency (160 hrs/mo).
+  const nsCostMo = (g: string, band: string): number | null => {
+    const c = COST_DATA[g]?.[band];
+    if (c == null) return null;
+    return cur === 'INR' ? Math.round(c * INR_RATE * 160) : Math.round(c * 160);
+  };
+  const fmtMoney = (v: number | null) => (v == null ? '—' : sym + v.toLocaleString('en-IN'));
+
+  const rows = BENCHMARKS.filter(
+    (b) => (!group || b.group === group) && (!q || b.designation.toLowerCase().includes(q.toLowerCase()))
+  );
+
+  const copyBench = async () => {
+    const hS = 'background:#1B3A6B;color:#fff;padding:6px 10px;text-align:left;border:1px solid #142d54;font-size:11px;font-weight:600;text-transform:uppercase';
+    const hR = hS.replace('text-align:left', 'text-align:right');
+    let html = `<table style="border-collapse:collapse;font-family:Calibri,Arial,sans-serif;font-size:12px"><thead><tr><td colspan="7" style="background:#1B3A6B;color:#fff;padding:9px 12px;font-size:13px;font-weight:bold">NS Cost Benchmarking — market-validated CTC (${cur}/month)</td></tr><tr><th style="${hS}">Designation</th><th style="${hS}">Group</th><th style="${hS}">Level</th><th style="${hS}">Exp</th><th style="${hS}">Market (LPA)</th><th style="${hR}">Avg mkt/mo</th><th style="${hR}">NS cost/mo</th></tr></thead><tbody>`;
+    let tsv = `Designation\tGroup\tLevel\tExp\tMarket (LPA)\tAvg mkt/mo\tNS cost/mo`;
+    rows.forEach((b, i) => {
+      const bg = i % 2 ? '#f4f6fb' : '#fff';
+      const td = `padding:6px 10px;border:1px solid #e3e7ef;background:${bg}`; const tdr = td + ';text-align:right';
+      html += `<tr><td style="${td};font-weight:600;color:#1B3A6B">${b.designation}</td><td style="${td}">${b.group}</td><td style="${td}">${b.level}</td><td style="${td}">${b.exp}</td><td style="${td}">${b.marketValidated || '—'}</td><td style="${tdr}">${money(avgMo(b))}</td><td style="${tdr}">${fmtMoney(nsCostMo(b.group, b.band))}</td></tr>`;
+      tsv += `\n${b.designation}\t${b.group}\t${b.level}\t${b.exp}\t${b.marketValidated || '—'}\t${money(avgMo(b))}\t${fmtMoney(nsCostMo(b.group, b.band))}`;
+    });
+    html += '</tbody></table>';
+    toast((await copyRichTable(html, tsv)) ? 'Benchmarks copied' : 'Copy failed');
+  };
+
+  return (
+    <div className="card card-bd">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div onClick={() => setOpen(!open)} style={{ cursor: 'pointer', fontWeight: 700, color: 'var(--navy)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ display: 'inline-block', transition: 'transform .2s', transform: open ? 'rotate(90deg)' : 'none', fontSize: 10, color: 'var(--muted)' }}>▶</span>
+          Cost benchmarking — {BENCHMARKS.length} market-validated designations
+        </div>
+        {open && (
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <input placeholder="Search designation…" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 200 }} />
+            <select value={group} onChange={(e) => setGroup(e.target.value)} style={{ width: 'auto' }}>
+              <option value="">All groups</option>
+              {groups.map((g) => <option key={g}>{g}</option>)}
+            </select>
+            <button className="btn btn-navy btn-sm" onClick={copyBench}>Copy</button>
+          </div>
+        )}
+      </div>
+      <div className={'rc-ref' + (open ? ' open' : '')}>
+        <div className="hint" style={{ marginTop: 12 }}>External market validation of CTC — used to sanity-check <b>cost</b>, never price. Compare NS cost/mo against the average expected market cost; validate as real profiles come in on each requirement.</div>
+        <div style={{ marginTop: 10, overflowX: 'auto', maxHeight: 460, overflowY: 'auto' }}>
+          <table style={{ fontSize: 12 }}>
+            <thead className="navy" style={{ position: 'sticky', top: 0 }}>
+              <tr><th>Designation</th><th>Group</th><th>Level</th><th>Exp</th><th>Market (LPA)</th><th className="num">Market {sym}/mo</th><th className="num">Avg {sym}/mo</th><th className="num">NS cost {sym}/mo</th></tr>
+            </thead>
+            <tbody>
+              {rows.map((b, i) => (
+                <tr key={b.id} className={i % 2 ? 'tr-alt' : ''}>
+                  <td style={{ fontWeight: 600, color: 'var(--navy)' }}>{b.designation}</td>
+                  <td style={{ color: 'var(--muted)' }}>{b.group}</td>
+                  <td>{b.level}</td>
+                  <td style={{ color: 'var(--muted)' }}>{b.exp}</td>
+                  <td>{b.marketValidated || <span style={{ color: '#d1d5db' }}>not validated</span>}</td>
+                  <td className="num" style={{ color: 'var(--muted)' }}>{b.mktLowMo != null ? `${money(b.mktLowMo)}–${money(b.mktHighMo)}` : '—'}</td>
+                  <td className="num" style={{ fontWeight: 700 }}>{money(avgMo(b))}</td>
+                  <td className="num" style={{ color: 'var(--teal-d)' }}>{fmtMoney(nsCostMo(b.group, b.band))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   );
 }
 
