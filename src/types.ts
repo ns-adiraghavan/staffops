@@ -39,6 +39,7 @@ export interface Requirement {
   vendors: string[]; // vendor ids
   jd: string;
   notes: string;
+  benchmarkId?: string; // correlated Cost Benchmarking designation (closest / custom match)
   createdAt: number;
 }
 
