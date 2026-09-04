@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useApp } from '../app-context';
-import { useDB, candsFor } from '../data/store';
-import { Topbar } from '../components/ui';
+import { useDB, candsFor, loadDemo } from '../data/store';
+import { Topbar, EmptyState } from '../components/ui';
 import { RequirementForm } from '../components/forms';
 import { ACTIVE_STATUSES, STATUS_CLASS } from '../lib/constants';
 
@@ -11,6 +11,22 @@ export function Requirements() {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
   const [type, setType] = useState('');
+
+  if (db.requirements.length === 0) {
+    return (
+      <>
+        <Topbar title="Requirements" sub="No requirements yet" actions={<button className="btn btn-primary" onClick={() => openModal(<RequirementForm />)}>+ New requirement</button>} />
+        <div className="content">
+          <EmptyState
+            title="No requirements yet"
+            sub="Raise your first requirement — paste a client JD or MOM and fill the fields — or load the demo dataset to see the full flow."
+            primary={<button className="btn btn-primary" onClick={() => openModal(<RequirementForm />)}>+ New requirement</button>}
+            secondary={<button className="btn btn-ghost" onClick={loadDemo}>▷ Load demo data</button>}
+          />
+        </div>
+      </>
+    );
+  }
 
   const active = db.requirements.filter((r) => ACTIVE_STATUSES.includes(r.status)).length;
   const pending = db.requirements.filter((r) => r.rateCard === 'Pending' && ACTIVE_STATUSES.includes(r.status)).length;
